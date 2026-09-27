@@ -66,6 +66,7 @@ h1 { font-size:clamp(30px,4vw,48px); letter-spacing:-.055em; line-height:1.02; m
 .stat-top i { width:7px; height:7px; border-radius:50%; background:#64757f; }
 .stat-top i.amber { background:#d5b06c; }
 .stat-top i.violet { background:#9a84db; }
+.stat-top i.red { background:#d77b85; }
 .stat-top i.green { background:#7ac99d; }
 .stat-value { font:600 30px ui-monospace, SFMono-Regular, Menlo, monospace; margin-top:16px; letter-spacing:-.04em; }
 .stat-note { color:#61747f; font-size:10px; margin-top:7px; }
@@ -110,6 +111,9 @@ h1 { font-size:clamp(30px,4vw,48px); letter-spacing:-.055em; line-height:1.02; m
 .activity-icon, .event-icon { width:28px; height:28px; border-radius:9px; display:grid; place-items:center; background:#101e26; border:1px solid #1d3039; font:600 13px ui-monospace, monospace; color:#9bb0ba; }
 .event-icon.release { color:#bca6ee; }
 .event-icon.workflow { color:#89d8a9; }
+.event-icon.workflow_failure { color:#e28a94; border-color:#4a2a31; background:#211319; }
+.event-icon.pull_request { color:#9bb8ef; }
+.event-icon.issue { color:#d4af72; }
 .activity-row strong { display:block; font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .activity-row span { display:block; color:#697b86; font-size:9px; margin-top:4px; }
 
