@@ -129,6 +129,7 @@ function Overview({ overview, repos, events, core, usage, onRepo }) {
       <Stat label="Repositories" value={overview?.repositories ?? "—"} note="account-wide inventory" />
       <Stat label="My open PRs" value={overview?.open_pull_requests ?? "—"} note="open pull requests" tone="amber" />
       <Stat label="My open issues" value={overview?.open_issues ?? "—"} note="open issues" tone="violet" />
+      <Stat label="Recent CI failures" value={overview?.recent_ci_failures ?? "—"} note="last 7 days" tone="red" />
       <Stat label="API used" value={core ? usage + "%" : "—"} note={core ? core.remaining + " requests remaining" : "waiting for token"} tone="green" />
     </div>
 
@@ -233,7 +234,7 @@ function formatDate(value) {
 }
 
 function eventSymbol(type) {
-  return type === "commit" ? "↗" : type === "release" ? "◆" : type === "workflow" ? "⚙" : "•";
+  return type === "commit" ? "↗" : type === "release" ? "◆" : type.startsWith("workflow") ? (type === "workflow_failure" ? "!" : "⚙") : type === "pull_request" ? "PR" : type === "issue" ? "IS" : "•";
 }
 
 createRoot(document.getElementById("root")).render(<App />);
