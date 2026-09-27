@@ -86,18 +86,32 @@ async def run_sync():
 
 
 @app.get("/api/v1/overview")
-async def overview():
+def overview():
     db = connect()
     try:
-        repo_count = db.execute("SELECT COUNT(*) FROM repositories").fetchone()[0]
+        def state(name):
+            row = db.execute(
+                "SELECT value FROM sync_state WHERE key=?",
+                (name,),
+            ).fetchone()
+            return row[0] if row else None
+
+        repo_count = int(state("repo_count") or db.execute(
+            "SELECT COUNT(*) FROM repositories"
+        ).fetchone()[0])
+
         recent_cutoff = (datetime.utcnow() - timedelta(days=7)).isoformat()
         ci_failures = db.execute(
-            "SELECT COUNT(*) FROM events WHERE event_type='workflow_failure' AND created_at >= ?",
+            "SELECT COUNT(*) FROM events "
+            "WHERE event_type='workflow_failure' AND created_at >= ?",
             (recent_cutoff,),
         ).fetchone()[0]
-        last_sync_row = db.execute(
-            "SELECT value FROM sync_state WHERE key='last_sync'"
-        ).fetchone()
+
+        last_sync = state("last_sync")
+        open_prs = int(state("open_prs") or 0)
+        open_issues = int(state("open_issues") or 0)
+        remaining = state("rate_remaining")
+        limit = state("rate_limit")
     finally:
         db.close()
 
@@ -108,26 +122,23 @@ async def overview():
             "open_issues": 0,
             "recent_ci_failures": ci_failures,
             "sync": "not_connected",
-            "last_sync": last_sync_row[0] if last_sync_row else None,
+            "last_sync": last_sync,
         }
 
-    try:
-        rate = await github.rate_limit()
-        prs = await github.open_prs()
-        issues = await github.open_issues()
-        return {
-            "repositories": repo_count,
-            "open_pull_requests": prs.get("total_count", 0),
-            "open_issues": issues.get("total_count", 0),
-            "recent_ci_failures": ci_failures,
-            "sync": "live",
-            "last_sync": last_sync_row[0] if last_sync_row else None,
-            "poll_interval_seconds": settings.poll_interval_seconds,
-            "detail_repo_limit": settings.detail_repo_limit,
-            "rate_limit": rate.get("resources", {}).get("core", {}),
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"GitHub sync failed: {exc}") from exc
+    return {
+        "repositories": repo_count,
+        "open_pull_requests": open_prs,
+        "open_issues": open_issues,
+        "recent_ci_failures": ci_failures,
+        "sync": "live",
+        "last_sync": last_sync,
+        "poll_interval_seconds": settings.poll_interval_seconds,
+        "detail_repo_limit": settings.detail_repo_limit,
+        "rate_limit": {
+            "remaining": int(remaining) if remaining else None,
+            "limit": int(limit) if limit else None,
+        },
+    }
 
 
 @app.get("/api/v1/repositories")
