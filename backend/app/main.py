@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy import desc, select
@@ -108,7 +108,7 @@ async def overview(db: Session = Depends(get_db)) -> dict:
             "repositories": repo_count,
             "open_pull_requests": prs.get("total_count", 0),
             "open_issues": issues.get("total_count", 0),
-            "failing_checks": db.query(Event).filter(Event.event_type == "workflow_failure").count(),
+            "recent_ci_failures": recent_ci_failures(db),
             "sync": "live",
             "last_sync": SyncService(db, github).get_state("last_sync"),
             "poll_interval_seconds": settings.poll_interval_seconds,
@@ -167,6 +167,14 @@ def repository_detail(full_name: str, db: Session = Depends(get_db)) -> dict:
     result = repo_to_dict(repo)
     result["events"] = [event_to_dict(e) for e in recent]
     return result
+
+
+def recent_ci_failures(db: Session) -> int:
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    return db.query(Event).filter(
+        Event.event_type == "workflow_failure",
+        Event.created_at >= cutoff,
+    ).count()
 
 
 def repo_to_dict(repo: Repository) -> dict:
