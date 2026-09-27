@@ -6,7 +6,17 @@ const tabs = ["Overview", "Repositories", "Activity"];
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
-  const body = await response.json();
+  const contentType = response.headers.get("content-type") || "";
+  const raw = await response.text();
+
+  if (!contentType.includes("application/json")) {
+    const hint = raw.trim().toLowerCase().startsWith("<!doctype html")
+      ? "The Vite server returned HTML instead of the FastAPI API. Make sure the backend is running on http://localhost:8000."
+      : "The API returned a non-JSON response.";
+    throw new Error(hint);
+  }
+
+  const body = JSON.parse(raw);
   if (!response.ok) throw new Error(body.detail || "Request failed");
   return body;
 }
