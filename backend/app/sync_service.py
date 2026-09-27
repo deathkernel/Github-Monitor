@@ -44,6 +44,11 @@ class SyncService:
 
         self.set_state("last_sync", started.replace(tzinfo=None).isoformat())
         self.set_state("repo_count", str(len(repos)))
+        self.set_state("open_prs", str(prs.get("total_count", 0)))
+        self.set_state("open_issues", str(issues.get("total_count", 0)))
+        core = rate.get("resources", {}).get("core", {})
+        self.set_state("rate_remaining", str(core.get("remaining", "")))
+        self.set_state("rate_limit", str(core.get("limit", "")))
 
         return {
             "status": "ok",
