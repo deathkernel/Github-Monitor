@@ -107,10 +107,10 @@ class SyncService:
 
     async def _sync_repo_details(self, repo: dict[str, Any]) -> None:
         full_name = repo["full_name"]
-        commits = await self.client.recent_commits(full_name)
-        releases = await self.client.recent_releases(full_name)
-        runs = await self.client.recent_workflow_runs(full_name)
-        work_items = await self.client.recent_issues_and_prs(full_name)
+        commits = await self._safe_list(self.client.recent_commits(full_name))
+        releases = await self._safe_list(self.client.recent_releases(full_name))
+        runs = await self._safe_list(self.client.recent_workflow_runs(full_name))
+        work_items = await self._safe_list(self.client.recent_issues_and_prs(full_name))
 
         for commit in commits[:10]:
             sha = commit.get("sha", "")
@@ -184,6 +184,13 @@ class SyncService:
             )
 
         self.db.commit()
+
+    async def _safe_list(self, awaitable) -> list[dict[str, Any]]:
+        try:
+            value = await awaitable
+            return value if isinstance(value, list) else []
+        except Exception:
+            return []
 
     def _upsert_event(
         self,
