@@ -207,7 +207,7 @@ function RepoRow({ repo, onClick }) {
 function ActivityList({ events }) {
   if (!events.length) return <Empty title="No activity collected yet" text="Run a sync to populate commits, releases and workflow events." />;
   return <div className="activity-list">{events.map((e) => <a className="activity-row" href={e.url || "#"} target="_blank" rel="noreferrer" key={e.id}>
-    <div className={"event-icon " + e.type}>{eventSymbol(e.type)}</div>
+    <div className={"event-icon " + (e.event_type || e.type || "unknown")}>{eventSymbol(e.event_type || e.type)}</div>
     <div><strong>{e.title}</strong><span>{e.repo_full_name} · {e.actor || "GitHub"} · {formatDate(e.created_at)}</span></div>
   </a>)}</div>;
 }
@@ -243,8 +243,13 @@ function formatDate(value) {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function eventSymbol(type) {
-  return type === "commit" ? "↗" : type === "release" ? "◆" : type.startsWith("workflow") ? (type === "workflow_failure" ? "!" : "⚙") : type === "pull_request" ? "PR" : type === "issue" ? "IS" : "•";
+function eventSymbol(type = "") {
+  return type === "commit" ? "↗"
+    : type === "release" ? "◆"
+    : type.startsWith("workflow") ? (type === "workflow_failure" ? "!" : "⚙")
+    : type === "pull_request" ? "PR"
+    : type === "issue" ? "IS"
+    : "•";
 }
 
 createRoot(document.getElementById("root")).render(<App />);
