@@ -252,4 +252,29 @@ function eventSymbol(type = "") {
     : "•";
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#060c11", color: "#edf3f7", padding: 24, fontFamily: "system-ui" }}>
+        <div style={{ maxWidth: 720, border: "1px solid #4a2a31", background: "#211319", borderRadius: 16, padding: 24 }}>
+          <strong style={{ display: "block", marginBottom: 8 }}>GitHub Monitor UI crashed</strong>
+          <span style={{ color: "#d7aab1", fontSize: 13 }}>{String(this.state.error?.message || this.state.error)}</span>
+        </div>
+      </main>;
+    }
+    return this.props.children;
+  }
+}
+
+createRoot(document.getElementById("root")).render(
+  <ErrorBoundary><App /></ErrorBoundary>
+);
