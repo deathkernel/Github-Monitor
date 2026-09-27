@@ -64,3 +64,10 @@ class GitHubClient:
     async def recent_workflow_runs(self, full_name: str) -> list[dict[str, Any]]:
         data = await self.get(f"/repos/{full_name}/actions/runs", {"per_page": 10})
         return data.get("workflow_runs", [])
+
+
+    async def recent_issues_and_prs(self, full_name: str) -> list[dict[str, Any]]:
+        return await self.get(
+            f"/repos/{full_name}/issues",
+            {"state": "all", "sort": "updated", "direction": "desc", "per_page": 20},
+        )
