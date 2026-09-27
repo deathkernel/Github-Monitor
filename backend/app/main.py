@@ -629,9 +629,20 @@ def repository_detail(full_name: str):
             "SELECT * FROM events WHERE repo_full_name=? ORDER BY created_at DESC LIMIT 30",
             (full_name,),
         ).fetchall()
+        history_rows = db.execute(
+            "SELECT substr(captured_at,1,10) AS day, stars, forks, open_issues "
+            "FROM repository_history WHERE full_name=? ORDER BY captured_at DESC LIMIT 14",
+            (full_name,),
+        ).fetchall()
+        change_rows = db.execute(
+            "SELECT * FROM changes WHERE repo_full_name=? ORDER BY detected_at DESC LIMIT 20",
+            (full_name,),
+        ).fetchall()
 
         result = dict(repo)
         result["events"] = [dict(row) for row in rows]
+        result["history"] = [dict(row) for row in history_rows]
+        result["changes"] = [dict(row) for row in change_rows]
         return result
     finally:
         db.close()
