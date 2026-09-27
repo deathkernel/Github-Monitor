@@ -288,6 +288,32 @@ class SyncService:
             """,
             (key, repo, change_type, field, before, after, severity, detected),
         )
+
+        alert_key = f"{repo}:{change_type}:{field}:{after}"
+        self.db.execute(
+            """
+            INSERT INTO alerts(alert_key,repo_full_name,rule,severity,title,details,status,created_at)
+            VALUES(?,?,?,?,?,?,?,?)
+            ON CONFLICT(alert_key) DO UPDATE SET
+                severity=excluded.severity,
+                title=excluded.title,
+                details=excluded.details
+            """,
+            (
+                alert_key,
+                repo,
+                change_type,
+                severity,
+                f"{repo}: {change_type.replace('_', ' ')}",
+                json.dumps({
+                    "field": field,
+                    "before": before,
+                    "after": after,
+                }),
+                "open",
+                detected,
+            ),
+        )
         self.new_changes.append({
             "repo_full_name": repo,
             "change_type": change_type,
