@@ -117,20 +117,21 @@ async def enqueue_job(kind: str, payload: dict | None = None) -> int:
 
 async def background_sync():
     while True:
-        await enqueue_job("sync")
-        await asyncio.sleep(max(60, settings.poll_interval_seconds))
-
-
-    while True:
+        db = connect()
         try:
-            async with sync_lock:
-                db = connect()
-                try:
-                    await SyncService(db, github).sync()
-                finally:
-                    db.close()
-        except Exception:
-            pass
+            existing = db.execute(
+                "SELECT id FROM jobs WHERE kind='sync' AND status IN ('queued','running') LIMIT 1"
+            ).fetchone()
+            if existing is None:
+                now = datetime.utcnow().isoformat()
+                db.execute(
+                    "INSERT INTO jobs(kind,payload,status,run_after,created_at) VALUES(?,?,?,?,?)",
+                    ("sync", "{}", "queued", now, now),
+                )
+                db.commit()
+        finally:
+            db.close()
+
         await asyncio.sleep(max(60, settings.poll_interval_seconds))
 
 
@@ -138,8 +139,14 @@ async def background_sync():
 async def lifespan(app: FastAPI):
     global sync_task, job_task
 
-    global sync_task
     db = connect()
+    lease_cutoff = (datetime.utcnow() - timedelta(seconds=settings.job_lease_seconds)).isoformat()
+    db.execute(
+        "UPDATE jobs SET status='queued', last_error='Recovered after restart', started_at=NULL "
+        "WHERE status='running' AND started_at < ?",
+        (lease_cutoff,),
+    )
+    db.commit()
     db.close()
 
     if github.configured:
@@ -148,12 +155,14 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    if sync_task:
-        sync_task.cancel()
-    if job_task:
-        job_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await sync_task
+    for task in (sync_task, job_task):
+        if task:
+            task.cancel()
+
+    for task in (sync_task, job_task):
+        if task:
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 app = FastAPI(title="GitHub Monitor API", version="1.1.0", lifespan=lifespan)
@@ -178,6 +187,7 @@ async def connection():
             "name": profile.get("name"),
             "avatar_url": profile.get("avatar_url"),
             "rate_limit": rate.get("resources", {}).get("core", {}),
+            "write_actions_enabled": settings.enable_write_actions,
         }
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"GitHub connection failed: {exc}") from exc
@@ -410,6 +420,42 @@ def alerts(limit: int = Query(100, ge=1, le=500), status: str = "open"):
         return {"count": len(rows), "alerts": [dict(r) for r in rows]}
     finally:
         db.close()
+
+
+
+@app.post("/api/v1/alerts/{alert_id}/ack")
+def acknowledge_alert(alert_id: int):
+    db = connect()
+    try:
+        db.execute(
+            "UPDATE alerts SET status='acknowledged', resolved_at=? WHERE id=?",
+            (datetime.utcnow().isoformat(), alert_id),
+        )
+        db.commit()
+        return {"status": "ok", "id": alert_id}
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/notifications")
+def notifications(limit: int = Query(50, ge=1, le=200)):
+    db = connect()
+    try:
+        rows = db.execute(
+            "SELECT * FROM notification_deliveries ORDER BY delivered_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return {"count": len(rows), "notifications": [dict(r) for r in rows]}
+    finally:
+        db.close()
+
+
+@app.get("/api/v1/commands")
+def commands_status():
+    return {
+        "write_actions_enabled": settings.enable_write_actions,
+        "actions": ["create_issue", "create_pr", "merge_pr", "rerun_failed_jobs"],
+    }
 
 
 @app.get("/api/v1/history")
