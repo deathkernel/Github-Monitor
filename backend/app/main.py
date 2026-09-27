@@ -108,7 +108,7 @@ async def overview(db: Session = Depends(get_db)) -> dict:
             "repositories": repo_count,
             "open_pull_requests": prs.get("total_count", 0),
             "open_issues": issues.get("total_count", 0),
-            "failing_checks": db.query(Event).filter(Event.event_type == "workflow").count(),
+            "failing_checks": db.query(Event).filter(Event.event_type == "workflow_failure").count(),
             "sync": "live",
             "last_sync": SyncService(db, github).get_state("last_sync"),
             "poll_interval_seconds": settings.poll_interval_seconds,
