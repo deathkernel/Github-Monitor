@@ -90,6 +90,9 @@ class SyncService:
     async def sync_repositories(self) -> list[dict[str, Any]]:
         repos: list[dict[str, Any]] = []
         page = 1
+        previous_rows = self.db.execute('SELECT github_id,full_name FROM repositories').fetchall()
+        previous_names = {row['full_name'] for row in previous_rows}
+        seen_names: set[str] = set()
 
         while True:
             batch = await self.client.repositories(page)
@@ -97,6 +100,7 @@ class SyncService:
             now = utcnow()
 
             for item in batch:
+                seen_names.add(item['full_name'])
                 old = self.db.execute(
                     "SELECT * FROM repositories WHERE github_id=?", (item["id"],)
                 ).fetchone()
@@ -177,6 +181,11 @@ class SyncService:
             if len(batch) < 100:
                 break
             page += 1
+
+        missing = sorted(previous_names - seen_names)
+        for name in missing:
+            self.record_change(name, 'repository_missing', 'access', 'present', 'not_returned', 'warning')
+        self.set_state('missing_repo_count', str(len(missing)))
 
         return repos
 
