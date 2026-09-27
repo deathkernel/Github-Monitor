@@ -46,7 +46,7 @@ function App() {
       setError("");
       setBusy(true);
       if (withSync) await api("/api/v1/sync", { method: "POST" });
-      const [c, o, r, e] = await Promise.all([
+      const [c, o, r, e, a] = await Promise.all([
         api("/api/v1/connection"),
         api("/api/v1/overview"),
         api("/api/v1/repositories?limit=500"),
