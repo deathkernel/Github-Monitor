@@ -31,7 +31,7 @@ class GitHubClient:
     def configured(self) -> bool:
         return bool(settings.github_token)
 
-    def _govern(self, path: str) -> None:
+    async def _govern(self, path: str, method: str) -> None:
         if path == "/rate_limit":
             return
 
@@ -45,7 +45,12 @@ class GitHubClient:
         if self.remaining is not None and self.remaining <= settings.rate_soft_floor:
             elapsed = time.monotonic() - self.last_request_monotonic
             if elapsed < 0.75:
-                time.sleep(0.75 - elapsed)
+                await asyncio.sleep(0.75 - elapsed)
+
+        if method != "GET":
+            elapsed = time.monotonic() - self.last_request_monotonic
+            if elapsed < 1.0:
+                await asyncio.sleep(1.0 - elapsed)
 
     def _capture_rate_headers(self, response: httpx.Response) -> None:
         try:
@@ -69,7 +74,7 @@ class GitHubClient:
         params: dict[str, Any] | None = None,
         payload: dict[str, Any] | None = None,
     ) -> Any:
-        self._govern(path)
+        await self._govern(path, method)
 
         for attempt in range(settings.request_retry_limit + 1):
             try:
