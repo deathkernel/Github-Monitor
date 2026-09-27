@@ -231,6 +231,7 @@ def overview():
         last_sync = state("last_sync")
         open_prs = int(state("open_prs") or 0)
         open_issues = int(state("open_issues") or 0)
+        missing_repo_count = int(state("missing_repo_count") or 0)
         remaining = state("rate_remaining")
         limit = state("rate_limit")
     finally:
@@ -255,6 +256,7 @@ def overview():
         "last_sync": last_sync,
         "poll_interval_seconds": settings.poll_interval_seconds,
         "detail_repo_limit": settings.detail_repo_limit,
+        "missing_repo_count": missing_repo_count,
         "rate_limit": {
             "remaining": int(remaining) if remaining else None,
             "limit": int(limit) if limit else None,
