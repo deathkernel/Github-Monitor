@@ -61,15 +61,18 @@ class SyncService:
             "open_pull_requests": prs.get("total_count", 0),
             "open_issues": issues.get("total_count", 0),
             "rate_limit": rate.get("resources", {}).get("core", {}),
+            "detail_repo_limit": settings.detail_repo_limit,
             "duration_seconds": round((utcnow() - started).total_seconds(), 2),
         }
 
     async def _sync_repositories(self) -> list[dict[str, Any]]:
         repos: list[dict[str, Any]] = []
         page = 1
+
         while True:
             batch = await self.client.repositories(page)
             repos.extend(batch)
+
             for item in batch:
                 existing = self.db.execute(
                     select(Repository).where(Repository.github_id == item["id"])
@@ -94,10 +97,12 @@ class SyncService:
                 existing.updated_at_github = parse_dt(item.get("updated_at"))
                 existing.pushed_at_github = parse_dt(item.get("pushed_at"))
                 existing.synced_at = utcnow()
+
             self.db.commit()
             if len(batch) < 100:
                 break
             page += 1
+
         return repos
 
     async def _sync_repo_details(self, repo: dict[str, Any]) -> None:
@@ -105,10 +110,14 @@ class SyncService:
         commits = await self.client.recent_commits(full_name)
         releases = await self.client.recent_releases(full_name)
         runs = await self.client.recent_workflow_runs(full_name)
+        work_items = await self.client.recent_issues_and_prs(full_name)
 
         for commit in commits[:10]:
             sha = commit.get("sha", "")
-            created = parse_dt(commit.get("commit", {}).get("author", {}).get("date")) or utcnow()
+            created = (
+                parse_dt(commit.get("commit", {}).get("author", {}).get("date"))
+                or utcnow()
+            )
             self._upsert_event(
                 event_key=f"commit:{full_name}:{sha}",
                 repo_full_name=full_name,
@@ -129,22 +138,49 @@ class SyncService:
                 title=release.get("name") or tag,
                 actor=(release.get("author") or {}).get("login"),
                 url=release.get("html_url"),
-                created_at=parse_dt(release.get("published_at") or release.get("created_at")) or utcnow(),
+                created_at=parse_dt(
+                    release.get("published_at") or release.get("created_at")
+                ) or utcnow(),
                 payload=release,
             )
 
         for run in runs[:10]:
             run_id = run.get("id")
             status = run.get("conclusion") or run.get("status") or "unknown"
+            event_type = (
+                "workflow_failure"
+                if status in {"failure", "cancelled", "timed_out", "action_required", "stale"}
+                else "workflow"
+            )
             self._upsert_event(
                 event_key=f"workflow:{full_name}:{run_id}",
                 repo_full_name=full_name,
-                event_type="workflow",
+                event_type=event_type,
                 title=f"{run.get('name') or 'Workflow'} · {status}",
                 actor=(run.get("actor") or {}).get("login"),
                 url=run.get("html_url"),
-                created_at=parse_dt(run.get("updated_at") or run.get("created_at")) or utcnow(),
+                created_at=parse_dt(
+                    run.get("updated_at") or run.get("created_at")
+                ) or utcnow(),
                 payload=run,
+            )
+
+        for item in work_items[:20]:
+            number = item.get("number")
+            is_pr = bool(item.get("pull_request"))
+            kind = "pull_request" if is_pr else "issue"
+            state = item.get("state", "unknown")
+            self._upsert_event(
+                event_key=f"{kind}:{full_name}:{number}:{item.get('updated_at')}",
+                repo_full_name=full_name,
+                event_type=kind,
+                title=f"#{number} · {item.get('title', '')} · {state}"[:500],
+                actor=(item.get("user") or {}).get("login"),
+                url=item.get("html_url"),
+                created_at=parse_dt(
+                    item.get("updated_at") or item.get("created_at")
+                ) or utcnow(),
+                payload=item,
             )
 
         self.db.commit()
@@ -160,10 +196,14 @@ class SyncService:
         created_at: datetime,
         payload: dict[str, Any],
     ) -> None:
-        row = self.db.execute(select(Event).where(Event.event_key == event_key)).scalar_one_or_none()
+        row = self.db.execute(
+            select(Event).where(Event.event_key == event_key)
+        ).scalar_one_or_none()
+
         if row is None:
             row = Event(event_key=event_key)
             self.db.add(row)
+
         row.repo_full_name = repo_full_name
         row.event_type = event_type
         row.title = title[:500]
