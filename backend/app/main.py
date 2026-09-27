@@ -14,16 +14,18 @@ from .sync_service import SyncService
 
 github = GitHubClient()
 sync_task: asyncio.Task | None = None
+sync_lock = asyncio.Lock()
 
 
 async def background_sync() -> None:
     while True:
         try:
-            db = SessionLocal()
-            try:
-                await SyncService(db, github).sync()
-            finally:
-                db.close()
+            async with sync_lock:
+                db = SessionLocal()
+                try:
+                    await SyncService(db, github).sync()
+                finally:
+                    db.close()
         except Exception:
             # The next cycle retries; API failures should not kill the server.
             pass
@@ -75,11 +77,12 @@ async def connection() -> dict:
 async def run_sync() -> dict:
     if not github.configured:
         raise HTTPException(status_code=503, detail="Configure GITHUB_TOKEN first")
-    db = SessionLocal()
-    try:
-        return await SyncService(db, github).sync()
-    finally:
-        db.close()
+    async with sync_lock:
+        db = SessionLocal()
+        try:
+            return await SyncService(db, github).sync()
+        finally:
+            db.close()
 
 
 @app.get("/api/v1/overview")
