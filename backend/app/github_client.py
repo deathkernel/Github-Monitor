@@ -21,7 +21,7 @@ class GitHubClient:
         return bool(settings.github_token)
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=25) as client:
             response = await client.get(
                 f"{self.base_url}{path}",
                 headers=self.headers,
@@ -50,13 +50,17 @@ class GitHubClient:
         )
 
     async def open_prs(self) -> dict[str, Any]:
-        return await self.get(
-            "/search/issues",
-            {"q": "is:open is:pr user:@me", "per_page": 1},
-        )
+        return await self.get("/search/issues", {"q": "is:open is:pr user:@me", "per_page": 1})
 
     async def open_issues(self) -> dict[str, Any]:
-        return await self.get(
-            "/search/issues",
-            {"q": "is:open is:issue user:@me", "per_page": 1},
-        )
+        return await self.get("/search/issues", {"q": "is:open is:issue user:@me", "per_page": 1})
+
+    async def recent_commits(self, full_name: str) -> list[dict[str, Any]]:
+        return await self.get(f"/repos/{full_name}/commits", {"per_page": 10})
+
+    async def recent_releases(self, full_name: str) -> list[dict[str, Any]]:
+        return await self.get(f"/repos/{full_name}/releases", {"per_page": 5})
+
+    async def recent_workflow_runs(self, full_name: str) -> list[dict[str, Any]]:
+        data = await self.get(f"/repos/{full_name}/actions/runs", {"per_page": 10})
+        return data.get("workflow_runs", [])
