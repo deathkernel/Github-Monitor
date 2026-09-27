@@ -141,6 +141,123 @@ def overview():
     }
 
 
+def analytics_payload(db) -> dict:
+    now = datetime.utcnow()
+    repos = [dict(r) for r in db.execute("SELECT * FROM repositories").fetchall()]
+
+    def parse(value):
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    active_7 = active_30 = stale_30 = stale_90 = archived = private = 0
+    total_stars = total_forks = 0
+    languages = {}
+    health = []
+
+    for repo in repos:
+        last = parse(repo.get("pushed_at")) or parse(repo.get("updated_at_github"))
+        age = (now - last).days if last else 9999
+        active_7 += age <= 7
+        active_30 += age <= 30
+        stale_30 += age > 30
+        stale_90 += age > 90
+        archived += bool(repo.get("archived"))
+        private += bool(repo.get("private"))
+        total_stars += int(repo.get("stars") or 0)
+        total_forks += int(repo.get("forks") or 0)
+
+        lang = repo.get("language") or "Unknown"
+        languages[lang] = languages.get(lang, 0) + 1
+
+        failures = db.execute(
+            "SELECT COUNT(*) FROM events WHERE repo_full_name=? "
+            "AND event_type='workflow_failure' AND created_at >= ?",
+            (repo["full_name"], (now - timedelta(days=7)).isoformat()),
+        ).fetchone()[0]
+
+        score = 100
+        flags = []
+        if repo.get("archived"):
+            score -= 25
+            flags.append("archived")
+        if age > 90:
+            score -= 30
+            flags.append("stale_90d")
+        elif age > 30:
+            score -= 15
+            flags.append("stale_30d")
+        if int(repo.get("open_issues") or 0) > 10:
+            score -= 5
+            flags.append("many_open_issues")
+        if failures:
+            score -= min(25, failures * 5)
+            flags.append(f"ci_failures_7d:{failures}")
+
+        health.append({
+            "full_name": repo["full_name"],
+            "score": max(0, score),
+            "flags": flags,
+            "language": lang,
+            "stars": int(repo.get("stars") or 0),
+            "open_issues": int(repo.get("open_issues") or 0),
+            "updated_at": repo.get("updated_at_github"),
+        })
+
+    event_rows = db.execute(
+        "SELECT event_type, COUNT(*) AS n FROM events GROUP BY event_type ORDER BY n DESC"
+    ).fetchall()
+    activity_rows = db.execute(
+        "SELECT repo_full_name, COUNT(*) AS n FROM events "
+        "GROUP BY repo_full_name ORDER BY n DESC LIMIT 10"
+    ).fetchall()
+
+    cutoff = (now - timedelta(days=7)).isoformat()
+    workflow_runs = db.execute(
+        "SELECT COUNT(*) FROM events WHERE event_type IN ('workflow','workflow_failure') "
+        "AND created_at >= ?", (cutoff,)
+    ).fetchone()[0]
+    workflow_failures = db.execute(
+        "SELECT COUNT(*) FROM events WHERE event_type='workflow_failure' AND created_at >= ?",
+        (cutoff,)
+    ).fetchone()[0]
+
+    return {
+        "repo_count": len(repos),
+        "active_7d": active_7,
+        "active_30d": active_30,
+        "stale_30d": stale_30,
+        "stale_90d": stale_90,
+        "archived": archived,
+        "private": private,
+        "public": len(repos) - private,
+        "total_stars": total_stars,
+        "total_forks": total_forks,
+        "languages": [
+            {"name": k, "count": v}
+            for k, v in sorted(languages.items(), key=lambda x: x[1], reverse=True)[:10]
+        ],
+        "events": [{"type": r["event_type"], "count": r["n"]} for r in event_rows],
+        "top_activity": [{"repo": r["repo_full_name"], "count": r["n"]} for r in activity_rows],
+        "workflow_runs_7d": workflow_runs,
+        "workflow_failures_7d": workflow_failures,
+        "workflow_success_rate_7d": round((workflow_runs-workflow_failures)/workflow_runs*100, 1) if workflow_runs else None,
+        "health": sorted(health, key=lambda x: (x["score"], x["full_name"]))[:12],
+    }
+
+
+@app.get("/api/v1/analytics")
+def analytics():
+    db = connect()
+    try:
+        return analytics_payload(db)
+    finally:
+        db.close()
+
+
 @app.get("/api/v1/repositories")
 def repositories(
     limit: int = Query(100, ge=1, le=500),
