@@ -105,6 +105,7 @@ Use the minimum GitHub token permissions required for monitoring. The applicatio
 - GET /api/v1/repositories
 - GET /api/v1/repositories/{owner}/{repo}
 - GET /api/v1/events
+- GET /api/v1/analytics
 - GET /health
 
 ## Next layer
