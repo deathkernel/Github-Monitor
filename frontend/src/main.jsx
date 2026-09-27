@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-const tabs = ["Overview", "Repositories", "Activity"];
+const tabs = ["Overview", "Repositories", "Activity", "Analytics"];
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
@@ -35,6 +35,7 @@ function App() {
   const [overview, setOverview] = useState(null);
   const [repos, setRepos] = useState([]);
   const [events, setEvents] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -50,11 +51,13 @@ function App() {
         api("/api/v1/overview"),
         api("/api/v1/repositories?limit=500"),
         api("/api/v1/events?limit=100"),
+        api("/api/v1/analytics"),
       ]);
       setConnection(c);
       setOverview(o);
       setRepos(r.repositories || []);
       setEvents(e.events || []);
+      setAnalytics(a);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -126,6 +129,7 @@ function App() {
       {tab === "Overview" && <Overview overview={overview} repos={repos} events={events} core={core} usage={usage} onRepo={openRepo} />}
       {tab === "Repositories" && <Repositories repos={filteredRepos} total={repos.length} query={query} setQuery={setQuery} onRepo={openRepo} />}
       {tab === "Activity" && <Activity events={events} />}
+      {tab === "Analytics" && <Analytics analytics={analytics} />}
 
       {selectedRepo && <RepoDrawer repo={selectedRepo} onClose={() => setSelectedRepo(null)} />}
     </main>
@@ -169,6 +173,63 @@ function Overview({ overview, repos, events, core, usage, onRepo }) {
       <section className="panel span-2">
         <PanelHead title="Activity timeline" sub="Commits, releases and workflow runs collected by the monitor." />
         <ActivityList events={events.slice(0, 8)} />
+      </section>
+    </div>
+  </section>;
+}
+
+
+function Analytics({ analytics }) {
+  if (!analytics) return <section className="page"><section className="panel"><Empty title="Analytics not ready" text="Run a sync to populate the analysis layer." /></section></section>;
+
+  const maxLang = Math.max(1, ...(analytics.languages || []).map((x) => x.count));
+  const maxActivity = Math.max(1, ...(analytics.top_activity || []).map((x) => x.count));
+  const scoreLabel = (score) => score >= 80 ? "Stable" : score >= 60 ? "Watch" : score >= 40 ? "Needs attention" : "High attention";
+
+  return <section className="page">
+    <div className="analysis-grid">
+      <section className="panel analysis-hero">
+        <PanelHead title="Portfolio pulse" sub="A cross-repository view derived from your local monitor cache." />
+        <div className="pulse-grid">
+          <div><strong>{analytics.active_7d}</strong><span>active in 7d</span></div>
+          <div><strong>{analytics.active_30d}</strong><span>active in 30d</span></div>
+          <div><strong>{analytics.stale_30d}</strong><span>stale &gt;30d</span></div>
+          <div><strong>{analytics.stale_90d}</strong><span>stale &gt;90d</span></div>
+        </div>
+        <div className="analysis-note"><strong>{analytics.public}</strong> public · <strong>{analytics.private}</strong> private · <strong>{analytics.archived}</strong> archived · <strong>{analytics.total_stars}</strong> stars · <strong>{analytics.total_forks}</strong> forks</div>
+      </section>
+
+      <section className="panel">
+        <PanelHead title="CI reliability" sub="Workflow events observed during the last 7 days." />
+        <div className="ci-rate">
+          <strong>{analytics.workflow_success_rate_7d == null ? "—" : analytics.workflow_success_rate_7d + "%"}</strong>
+          <span>{analytics.workflow_runs_7d} workflow events · {analytics.workflow_failures_7d} failure events</span>
+        </div>
+        <div className="meter-track"><div className="meter-fill" style={{ width: (analytics.workflow_success_rate_7d ?? 0) + "%" }} /></div>
+      </section>
+
+      <section className="panel">
+        <PanelHead title="Language mix" sub="Repository count by primary language." />
+        <div className="bar-list">{(analytics.languages || []).map((x) => <div className="bar-row" key={x.name}><div><span>{x.name}</span><strong>{x.count}</strong></div><div className="bar-track"><div className="bar-fill" style={{ width: (x.count / maxLang * 100) + "%" }} /></div></div>)}</div>
+      </section>
+
+      <section className="panel">
+        <PanelHead title="Activity concentration" sub="Where the monitor is seeing the most events." />
+        <div className="bar-list">{(analytics.top_activity || []).map((x) => <div className="bar-row" key={x.repo}><div><span>{x.repo}</span><strong>{x.count}</strong></div><div className="bar-track"><div className="bar-fill" style={{ width: (x.count / maxActivity * 100) + "%" }} /></div></div>)}</div>
+      </section>
+
+      <section className="panel">
+        <PanelHead title="Event mix" sub="Stored event types across the monitoring cache." />
+        <div className="event-mix">{(analytics.events || []).slice(0, 8).map((x) => <div className="event-mix-row" key={x.type}><span>{x.type.replaceAll("_", " ")}</span><strong>{x.count}</strong></div>)}</div>
+      </section>
+
+      <section className="panel span-2">
+        <PanelHead title="Attention queue" sub="Transparent heuristic flags based on freshness, CI failures and open-issue pressure." />
+        <div className="attention-list">{(analytics.health || []).map((x) => <div className="attention-row" key={x.full_name}>
+          <div><strong>{x.full_name}</strong><span>{x.flags.length ? x.flags.join(" · ") : "No heuristic flags"}</span></div>
+          <div className="attention-score"><span>{scoreLabel(x.score)}</span><strong>{x.score}</strong></div>
+        </div>)}</div>
+        <div className="analysis-note">Heuristic only: the score is a prioritization aid, not a GitHub-native health metric.</div>
       </section>
     </div>
   </section>;
